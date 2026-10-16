@@ -16,7 +16,16 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from flask import Flask, Response, abort, jsonify, redirect, render_template, request, url_for
+from flask import (
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from werkzeug.serving import make_server
 
 from validator import validate
@@ -31,15 +40,26 @@ URL = f"http://{HOST}:{PORT}/"
 APP_ID = "SQLinesLogChecker-v1"
 
 TEMPLATE_FOLDER = (
-    Path(sys._MEIPASS) / "templates" if PACKAGED else Path(__file__).resolve().parent / "templates"
+    Path(sys._MEIPASS) / "templates"
+    if PACKAGED
+    else Path(__file__).resolve().parent / "templates"
 )
-app = Flask(__name__, template_folder=str(TEMPLATE_FOLDER))
+
+app = Flask(
+    __name__,
+    template_folder=str(TEMPLATE_FOLDER),
+    static_folder=os.path.join(
+        sys._MEIPASS if getattr(sys, "frozen", False) else os.path.dirname(__file__),
+        "static",
+    ),
+)
 
 
 @app.after_request
 def prevent_cached_app_pages(response):
     response.headers["Cache-Control"] = "no-store"
     return response
+
 
 _shutdown_token = secrets.token_urlsafe(32)
 _server = None
@@ -65,23 +85,27 @@ def index():
         uploaded = request.files.get("log_file")
         input_issues = []
         if uploaded and uploaded.filename:
-            if not uploaded.filename.lower().endswith('.sql'):
-                input_issues.append('Uploaded files must have a .sql extension.')
+            if not uploaded.filename.lower().endswith(".sql"):
+                input_issues.append("Uploaded files must have a .sql extension.")
             else:
                 raw = uploaded.read()
                 try:
                     # SQLines output may include a UTF-8 BOM or originate from
                     # a Windows ANSI environment (cp1252).
-                    text = raw.decode('utf-8-sig')
+                    text = raw.decode("utf-8-sig")
                 except UnicodeDecodeError:
                     try:
-                        text = raw.decode('cp1252')
+                        text = raw.decode("cp1252")
                     except UnicodeDecodeError:
-                        input_issues.append('Could not decode the uploaded SQL log.')
+                        input_issues.append("Could not decode the uploaded SQL log.")
 
         result = validate(text, input_issues=input_issues)
-        report_id = hashlib.sha256(text.encode('utf-8')).hexdigest()
-        source = ntpath.basename(uploaded.filename) if uploaded and uploaded.filename else 'Pasted log text'
+        report_id = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        source = (
+            ntpath.basename(uploaded.filename)
+            if uploaded and uploaded.filename
+            else "Pasted log text"
+        )
         with _result_lock:
             _latest_result = result
             _latest_report_id = report_id
@@ -95,50 +119,64 @@ def index():
         result = _latest_result
         report_id = _latest_report_id
         annotations = load_notes(report_id) if result is not None else {}
-    return render_template("index.html", result=result, report_id=report_id,
-                           annotations=annotations)
+    return render_template(
+        "index.html", result=result, report_id=report_id, annotations=annotations
+    )
 
 
-@app.post('/_investigation')
+@app.post("/_investigation")
 def save_investigation():
     if request.remote_addr != HOST or not secrets.compare_digest(
-        request.headers.get('X-SQLines-Shutdown-Token', ''), _shutdown_token
+        request.headers.get("X-SQLines-Shutdown-Token", ""), _shutdown_token
     ):
         abort(403)
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
-        return jsonify(error='Invalid investigation data'), 400
-    report_id, index = payload.get('report_id'), payload.get('index')
-    note, resolved = payload.get('note'), payload.get('resolved')
-    if (not isinstance(report_id, str) or type(index) is not int or
-        not isinstance(note, str) or type(resolved) is not bool or
-        len(note) > MAX_NOTE_LENGTH):
-        return jsonify(error=f'Invalid note (maximum {MAX_NOTE_LENGTH} characters)'), 400
+        return jsonify(error="Invalid investigation data"), 400
+    report_id, index = payload.get("report_id"), payload.get("index")
+    note, resolved = payload.get("note"), payload.get("resolved")
+    if (
+        not isinstance(report_id, str)
+        or type(index) is not int
+        or not isinstance(note, str)
+        or type(resolved) is not bool
+        or len(note) > MAX_NOTE_LENGTH
+    ):
+        return jsonify(
+            error=f"Invalid note (maximum {MAX_NOTE_LENGTH} characters)"
+        ), 400
     with _result_lock:
-        if (_latest_result is None or report_id != _latest_report_id or
-            not (0 <= index < len(_latest_result['unexpected']))):
-            return jsonify(error='The analyzed log has changed. Reload the page.'), 409
+        if (
+            _latest_result is None
+            or report_id != _latest_report_id
+            or not (0 <= index < len(_latest_result["unexpected"]))
+        ):
+            return jsonify(error="The analyzed log has changed. Reload the page."), 409
         notes = load_notes(report_id)
         key = str(index)
         if not note and not resolved:
             notes.pop(key, None)
         else:
-            notes[key] = {'note': note, 'resolved': resolved}
+            notes[key] = {"note": note, "resolved": resolved}
         save_notes(report_id, notes)
     return jsonify(saved=True)
 
 
-@app.get('/_report')
+@app.get("/_report")
 def download_report():
     if request.remote_addr != HOST:
         abort(403)
     with _result_lock:
         if _latest_result is None:
             abort(404)
-        report = build_report(_latest_result, load_notes(_latest_report_id), _latest_source)
-    response = Response(report, content_type='text/plain; charset=utf-8')
-    if request.args.get('download') == '1':
-        response.headers['Content-Disposition'] = 'attachment; filename="SQLines_Validation_Report.txt"'
+        report = build_report(
+            _latest_result, load_notes(_latest_report_id), _latest_source
+        )
+    response = Response(report, content_type="text/plain; charset=utf-8")
+    if request.args.get("download") == "1":
+        response.headers["Content-Disposition"] = (
+            'attachment; filename="SQLines_Validation_Report.txt"'
+        )
     return response
 
 
@@ -180,6 +218,7 @@ def show_startup_error(message):
     if sys.platform == "win32" and PACKAGED:
         # The Windows executable is windowed, so errors need a visible dialog.
         import ctypes
+
         ctypes.windll.user32.MessageBoxW(None, message, "SQLines Log Checker", 0x10)
     else:
         print(message, file=sys.stderr)

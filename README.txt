@@ -49,6 +49,9 @@ Rebuilding the Windows executable
 ---------------------------------
 With the project's Windows virtual environment active:
 pyinstaller --onefile --windowed --name SQLinesLogChecker --add-data "templates;templates" app.py
+Try:
+pyinstaller --onefile --windowed --name SQLinesLogChecker --add-data "templates;templates" --add-data "static;static" app.py
+to apply the newly extracted style.css
 
 No additional third-party packages are required beyond the app's existing
 Flask and build dependencies.
