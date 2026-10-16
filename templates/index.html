@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SQLines Log Checker</title>
+  <style>
+    :root { color-scheme: light; --bg:#f4f6fa; --surface:#fff; --ink:#192536; --muted:#607086; --border:#dce3ed; --accent:#305b88; --pass:#16734a; --pass-bg:#f0faf4; --fail:#a52d30; --fail-bg:#fff4f3; --warn:#a66b13; --warn-bg:#fff8e9; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    .shell { max-width:1040px; margin:0 auto; padding:36px 22px 70px; }
+    header { margin-bottom:24px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .quit-app { flex:none; display:inline-flex; align-items:center; gap:7px; border:1px solid var(--border); border-radius:7px; background:#fff; color:var(--ink); padding:8px 12px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+    .quit-app:hover { border-color:#b9c6d8; background:#f6f8fb; }
+    .quit-app:focus-visible { outline:3px solid #7ba8da; outline-offset:3px; }
+    .quit-app svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+    .quit-app:disabled { opacity:.55; cursor:default; }
+    .shutdown-error { color:var(--fail); font-size:13px; margin-top:8px; }
+    h1 { font-size:28px; letter-spacing:-.035em; margin:0 0 4px; }
+    h2 { font-size:17px; margin:0; letter-spacing:-.015em; }
+    p { margin:0; }
+    .subtle,.hint { color:var(--muted); }
+    .hint { font-size:12px; }
+    .panel { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:22px; margin-bottom:16px; box-shadow:0 2px 8px rgba(20,40,70,.035); }
+    .panel-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; }
+    .input-panel[open] > summary { margin-bottom:16px; }
+    summary { cursor:pointer; font-weight:650; }
+    summary:focus-visible,input:focus-visible,textarea:focus-visible { outline:3px solid #7ba8da; outline-offset:3px; }
+    .input-panel > summary { list-style-position:inside; }
+    .input-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .input-choice { border:1px dashed #aebed0; border-radius:9px; padding:16px; min-width:0; }
+    .input-choice label { display:block; font-weight:650; margin-bottom:9px; }
+    input[type=file] { width:100%; max-width:100%; font:inherit; font-size:13px; }
+    textarea { width:100%; height:96px; resize:vertical; border:1px solid var(--border); border-radius:7px; padding:10px; font:13px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; background:#fff; }
+    .input-choice .hint { margin-top:9px; }
+    .drop-zone { transition:border-color .15s ease, background-color .15s ease; }
+    .drop-zone.is-dragging { border-color:var(--accent); background:#edf5ff; }
+    .drop-zone .drop-instruction { color:var(--muted); font-size:13px; margin:0 0 12px; }
+    .upload-error { color:var(--fail); font-size:13px; margin-top:9px; }
+    .status { border-left:5px solid var(--pass); background:var(--pass-bg); }
+    .status.fail { border-left-color:var(--fail); background:var(--fail-bg); }
+    .status.cannot-validate { border-left-color:var(--warn); background:var(--warn-bg); }
+    .cannot-validate .status-title .symbol { color:var(--warn); }
+    .integrity-panel { border-left:4px solid var(--warn); }
+    .status-title { display:flex; gap:11px; align-items:center; font-size:21px; font-weight:750; margin-bottom:5px; }
+    .status-title .symbol { color:var(--pass); font-size:24px; }
+    .fail .status-title .symbol { color:var(--fail); }
+    .status-description { color:#435268; }
+    .metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:20px; }
+    .metric { background:rgba(255,255,255,.75); border:1px solid rgba(90,110,130,.17); border-radius:9px; padding:13px 15px; }
+    .metric strong { display:block; font-size:28px; font-variant-numeric:tabular-nums; line-height:1.2; }
+    .metric span { color:var(--muted); font-size:12px; }
+    .issue-list { margin:10px 0 0; padding-left:21px; }
+    .issue-list li + li { margin-top:7px; }
+    .issue-panel { border-left:4px solid var(--fail); }
+    .section-intro { color:var(--muted); font-size:13px; margin:5px 0 16px; }
+    .category { border:1px solid var(--border); border-radius:9px; margin-top:9px; overflow:hidden; }
+    .category summary { padding:13px 15px; display:flex; justify-content:space-between; align-items:center; gap:12px; list-style:none; }
+    .category summary::-webkit-details-marker { display:none; }
+    .category summary::before { content:'▸'; color:var(--muted); margin-right:8px; }
+    .category[open] summary::before { content:'▾'; }
+    .category-title { flex:1; }
+    .category-count { font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .category-body { border-top:1px solid var(--border); padding:13px 16px; color:#435268; font-size:13px; }
+    .category-body ul { margin:0; padding-left:19px; }
+    .category-body li + li { margin-top:5px; }
+    .error-card { border:1px solid #efc3c0; border-radius:9px; margin-top:12px; overflow:hidden; }
+    .error-card > summary { display:flex; align-items:center; gap:10px; padding:14px 16px; background:#fff8f7; list-style:none; }
+    .error-card > summary::-webkit-details-marker { display:none; }
+    .error-card > summary::before { content:'▸'; color:var(--ink); flex:none; line-height:1; }
+    .error-card[open] > summary::before { content:'▾'; }
+    .error-card .error-content { padding:16px; }
+    .analysis-details { display:flex; flex-direction:column; gap:12px; margin-bottom:16px; }
+    .analysis-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+    .problem-item { width:100%; }
+    .analysis-item { min-width:0; padding:10px 12px; border:1px solid var(--border); border-radius:7px; background:#fbfcfe; }
+    .field-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+    .field-heading .field-label { margin-bottom:0; }
+    .analysis-value { font-size:14px; font-weight:650; overflow-wrap:anywhere; }
+    .whitespace-value { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; white-space:pre-wrap; }
+    .whitespace-note { font-size:12px; color:var(--muted); margin:0; }
+    .raw-log { border:1px solid var(--border); border-radius:7px; overflow:hidden; }
+    .raw-log summary { padding:12px 14px; background:#f6f8fb; font-size:13px; font-weight:700; }
+    .raw-log[open] summary { border-bottom:1px solid var(--border); }
+    .raw-log-body { position:relative; }
+    .raw-log pre { border:0; border-radius:0; margin:0; padding-right:55px; background:#fff; }
+    .copy-log { position:absolute; top:8px; right:9px; display:flex; align-items:center; justify-content:center; width:32px; height:32px; border:1px solid transparent; border-radius:6px; background:#fff; color:var(--muted); cursor:pointer; }
+    .copy-log:hover { border-color:var(--border); background:#f6f8fb; color:var(--accent); }
+    .copy-log:focus-visible { outline:3px solid #7ba8da; outline-offset:2px; }
+    .copy-log svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+    .copy-log.copied { color:var(--pass); }
+    .copy-detail { display:flex; align-items:center; justify-content:center; flex:none; width:28px; height:28px; margin:-5px -6px -4px 0; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--muted); cursor:pointer; }
+    .copy-detail:hover:not(:disabled) { border-color:var(--border); background:#eef3fa; color:var(--accent); }
+    .copy-detail:focus-visible { outline:3px solid #7ba8da; outline-offset:2px; }
+    .copy-detail svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+    .copy-detail.copied { color:var(--pass); }
+    .copy-detail:disabled { opacity:.35; cursor:default; }
+    .field-label { color:var(--muted); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.055em; margin-bottom:6px; }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#f6f8fb; border:1px solid var(--border); border-radius:7px; padding:13px; margin:0 0 15px; font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace; }
+    pre:last-child { margin-bottom:0; }
+    .tag.resolved-tag { color:var(--pass); background:#e4f5ec; }
+    .investigation-notes { margin-top:16px; padding-top:15px; border-top:1px solid var(--border); }
+    .investigation-notes label { display:block; font-weight:700; font-size:13px; margin-bottom:8px; }
+    .investigation-notes textarea { width:100%; height:94px; min-height:76px; font:13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    .note-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:10px; flex-wrap:wrap; }
+    .resolved-label { display:inline-flex; align-items:center; gap:9px; font-weight:650; cursor:pointer; }
+    .resolved-label input { width:16px; height:16px; accent-color:var(--pass); cursor:pointer; }
+    .note-status { font-size:12px; color:var(--muted); }
+    .note-status.is-error { color:var(--fail); }
+    .report-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    .report-actions { display:flex; gap:9px; align-items:center; }
+    .report-copy { display:inline-flex; align-items:center; justify-content:center; width:38px; height:36px; border:1px solid var(--border); border-radius:7px; background:#fff; color:var(--muted); cursor:pointer; }
+    .report-copy:hover { color:var(--accent); background:#f6f8fb; }
+    .report-copy.copied { color:var(--pass); }
+    .report-copy svg { width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+    .download-report { display:inline-flex; align-items:center; gap:7px; border:1px solid var(--border); border-radius:7px; background:#fff; padding:8px 12px; color:var(--ink); font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+    .download-report:hover { background:#f6f8fb; border-color:#b9c6d8; }
+    .download-report svg { width:17px; height:17px; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; fill:none; }
+    .report-error { color:var(--fail); font-size:12px; margin-top:8px; }
+    .tag { font-size:11px; font-weight:700; color:var(--fail); background:#ffeae8; padding:3px 7px; border-radius:5px; }
+    .error-heading { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .footer-note { color:var(--muted); font-size:12px; margin-top:16px; }
+    @media(max-width:680px) { .shell { padding:22px 12px 50px; } .panel { padding:17px; } .input-grid { grid-template-columns:1fr; } .analysis-grid { gap:7px; } .analysis-item { padding:9px; } .metrics { gap:7px; } .metric { padding:10px; } .metric strong { font-size:23px; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <h1>SQLines Log Checker</h1>
+        <p class="subtle">Database migration error validation</p>
+        <p class="shutdown-error" id="shutdown-error" role="alert" hidden></p>
+      </div>
+      <button class="quit-app" type="button" id="quit-app" title="Stop the checker and release its port">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v9"></path><path d="M6.8 5.9a9 9 0 1 0 10.4 0"></path></svg>
+        Quit checker
+      </button>
+    </header>
+
+    <details class="panel input-panel" {% if not result %}open{% endif %}>
+      <summary>{% if result %}Check another log{% else %}Analyze a log{% endif %}</summary>
+      <form id="log-form" method="POST" enctype="multipart/form-data">
+        <div class="input-grid">
+          <div class="input-choice drop-zone" id="log-drop-zone">
+            <label for="log_file">Upload a log file</label>
+            <p class="drop-instruction">Drag and drop a log file here, or choose a file to browse.</p>
+            <input id="log_file" name="log_file" type="file" accept=".sql">
+            <p class="hint">Validation starts automatically. Only .sql files are accepted.</p>
+            <p class="upload-error" id="upload-error" role="alert" hidden></p>
+          </div>
+          <div class="input-choice">
+            <label for="log_text">Or paste log text</label>
+            <textarea id="log_text" name="log_text" placeholder="Paste the SQLines log here…" readonly aria-label="Paste log text (typing disabled)"></textarea>
+            <p class="hint">Paste with Ctrl+V or Cmd+V. Manual typing is disabled.</p>
+          </div>
+        </div>
+      </form>
+    </details>
+
+    {% if result %}
+      {% set unexpected_count = result.unexpected|length %}
+      {% set expected_count = result.total_blocks - unexpected_count %}
+      {% set ns = namespace(issues=[]) %}
+      {% for problem in result.problems %}
+        {% if not (problem.startswith('Found ') and ' unexpected error(s).' in problem) %}
+          {% set ns.issues = ns.issues + [problem] %}
+        {% endif %}
+      {% endfor %}
+      <section class="panel status {% if result.status == 'cannot_validate' %}cannot-validate{% elif result.status == 'fail' %}fail{% endif %}" aria-live="polite">
+        <div class="status-title">
+          <span class="symbol" aria-hidden="true">{% if result.status == 'pass' %}✓{% elif result.status == 'fail' %}✕{% else %}⚠{% endif %}</span>
+          <span>{% if result.status == 'pass' %}Validation passed{% elif result.status == 'fail' %}Validation failed{% else %}Cannot validate{% endif %}</span>
+        </div>
+        <p class="status-description">
+          {% if result.status == 'cannot_validate' %}
+            The input could not be completely verified. Any errors shown below are partial findings, not a PASS or FAIL result.
+          {% elif result.passed %}
+            All detected failures match the expected error patterns and required counts.
+          {% elif unexpected_count %}
+            {{ unexpected_count }} unexpected error{% if unexpected_count != 1 %}s{% endif %} require{% if unexpected_count == 1 %}s{% endif %} investigation{% if ns.issues %}; review the validation discrepancies below{% endif %}.
+          {% else %}
+            Expected error counts did not match the validation rules. Review the discrepancies below.
+          {% endif %}
+        </p>
+        <div class="metrics" aria-label="Validation totals">
+          {% if result.status == 'cannot_validate' %}
+            <div class="metric"><strong>{{ result.marker_count }}</strong><span>Failure markers found</span></div>
+            <div class="metric"><strong>{{ result.total_blocks }}</strong><span>Complete blocks parsed</span></div>
+            <div class="metric"><strong>{{ result.incomplete_count }}</strong><span>Incomplete blocks</span></div>
+          {% else %}
+            <div class="metric"><strong>{{ result.total_blocks }}</strong><span>Errors checked</span></div>
+            <div class="metric"><strong>{{ expected_count }}</strong><span>Recognized errors</span></div>
+            <div class="metric"><strong>{{ unexpected_count }}</strong><span>Unexpected errors</span></div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="panel report-panel" aria-labelledby="report-title">
+        <div class="report-heading">
+          <div>
+            <h2 id="report-title">Validation report</h2>
+            <p class="section-intro" style="margin-bottom:0">Includes expected-error checks, unexpected errors, investigation notes, and resolution status.</p>
+          </div>
+          <div class="report-actions">
+            <button class="report-copy" id="copy-report" type="button" title="Copy validation report" aria-label="Copy validation report">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>
+            </button>
+            <button class="download-report" id="download-report" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12m-4-4 4 4 4-4"></path><path d="M5 17v3h14v-3"></path></svg>
+              Download .txt
+            </button>
+          </div>
+        </div>
+        <p class="report-error" id="report-error" role="alert" hidden></p>
+      </section>
+
+      {% if result.integrity_issues %}
+        <section class="panel integrity-panel" aria-labelledby="integrity-title">
+          <h2 id="integrity-title">Input and log integrity issues</h2>
+          <ul class="issue-list">
+            {% for issue in result.integrity_issues %}<li>{{ issue }}</li>{% endfor %}
+          </ul>
+        </section>
+      {% endif %}
+
+      {% if ns.issues and result.status != 'cannot_validate' %}
+        <section class="panel issue-panel" aria-labelledby="issues-title">
+          <h2 id="issues-title">Validation issues</h2>
+          <ul class="issue-list">
+            {% for problem in ns.issues %}<li>{{ problem }}</li>{% endfor %}
+          </ul>
+        </section>
+      {% endif %}
+
+      {% if result.unexpected %}
+        <section class="panel" aria-labelledby="unexpected-title">
+          <h2 id="unexpected-title">Unexpected errors ({{ unexpected_count }})</h2>
+          <p class="section-intro">{% if result.status == 'cannot_validate' %}Partial findings from complete error blocks. {% endif %}Add investigation notes and check Resolved when finished. Open SQL Log Error to view the original log text.</p>
+          {% for error in result.unexpected %}
+            {% set saved = annotations.get(loop.index0|string, {}) %}
+            {% set is_resolved = saved.get('resolved', false) %}
+            <details class="error-card" data-error-index="{{ loop.index0 }}" {% if not is_resolved %}open{% endif %}>
+              <summary>
+                <span class="error-heading"><span>Unexpected error {{ loop.index }}</span><span class="tag {% if is_resolved %}resolved-tag{% endif %}">{% if is_resolved %}Resolved{% else %}Review required{% endif %}</span></span>
+              </summary>
+              <div class="error-content">
+                {% if error.analysis %}
+                  {% set a = error.analysis %}
+                  {% if a.table or a.columns or a.problem or a.value is not none %}
+                    <div class="analysis-details" aria-label="Extracted investigation details">
+                      {% set table_text = ((a.schema ~ '.') if a.schema else '') ~ a.table if a.table else 'Not identified' %}
+                      {% set column_text = a.columns|join(', ') if a.columns else 'Not identified' %}
+                      <div class="analysis-grid">
+                        <div class="analysis-item">
+                          <div class="field-heading">
+                            <div class="field-label">Table</div>
+                            <button type="button" class="copy-detail" data-copy-text="{{ table_text|tojson|forceescape }}" aria-label="Copy table" title="Copy table" {% if not a.table %}disabled{% endif %}>
+                              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>
+                            </button>
+                          </div>
+                          <div class="analysis-value">{{ table_text }}</div>
+                        </div>
+                        <div class="analysis-item">
+                          <div class="field-heading">
+                            <div class="field-label">Column{% if a.columns and a.columns|length != 1 %}s{% endif %}</div>
+                            <button type="button" class="copy-detail" data-copy-text="{{ column_text|tojson|forceescape }}" aria-label="Copy column" title="Copy column" {% if not a.columns %}disabled{% endif %}>
+                              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>
+                            </button>
+                          </div>
+                          <div class="analysis-value">{{ column_text }}</div>
+                        </div>
+                        <div class="analysis-item">
+                          <div class="field-heading">
+                            <div class="field-label">Value</div>
+                            <button type="button" class="copy-detail" data-copy-text="{{ a.value|tojson|forceescape if a.value is not none else 'null' }}" aria-label="Copy value" title="Copy value" {% if a.value is none %}disabled{% endif %}>
+                              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>
+                            </button>
+                          </div>
+                          <div class="analysis-value {% if a.value is not none %}whitespace-value{% endif %}">{% if a.value is not none %}{{ a.value_visible }}{% else %}Not applicable{% endif %}</div>
+                        </div>
+                      </div>
+                      {% if a.problem %}
+                        <div class="analysis-item problem-item">
+                          <div class="field-label">Problem</div>
+                          <div class="analysis-value">{{ a.problem }}</div>
+                        </div>
+                      {% endif %}
+                      {% if a.value is not none %}
+                        <p class="whitespace-note">Invisible characters are shown as [SPACE], [TAB], [LF], [CR], [VT], or [FF]. The original value is unchanged in the log.</p>
+                      {% endif %}
+                    </div>
+                  {% endif %}
+                {% endif %}
+                <details class="raw-log">
+                  <summary>SQL Log Error</summary>
+                  <div class="raw-log-body">
+                    <button class="copy-log" type="button" aria-label="Copy SQL log error" title="Copy SQL log error">
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <rect x="8" y="8" width="12" height="12" rx="2"></rect>
+                        <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+                      </svg>
+                    </button>
+                    <pre>{{ error.raw_log if error.raw_log else error.sql ~ '\n\n' ~ error.status ~ '\n' ~ error.error }}</pre>
+                  </div>
+                </details>
+                <div class="investigation-notes">
+                  <label for="investigation-note-{{ loop.index0 }}">Investigation / resolution notes</label>
+                  <textarea id="investigation-note-{{ loop.index0 }}" class="investigation-note" maxlength="10000" placeholder="Record what you found and how you resolved this error…">{{ saved.get('note', '') }}</textarea>
+                  <div class="note-row">
+                    <label class="resolved-label" for="resolved-{{ loop.index0 }}">
+                      <input type="checkbox" class="resolved-checkbox" id="resolved-{{ loop.index0 }}" {% if is_resolved %}checked{% endif %}>
+                      Resolved
+                    </label>
+                    <span class="note-status" aria-live="polite">{% if saved.get('note') or is_resolved %}Saved{% else %}Notes save automatically{% endif %}</span>
+                  </div>
+                </div>
+              </div>
+            </details>
+          {% endfor %}
+        </section>
+      {% endif %}
+
+      {% if result.status != 'cannot_validate' or result.total_blocks > 0 %}
+      <section class="panel" aria-labelledby="expected-title">
+        <h2 id="expected-title">Expected error categories</h2>
+        <p class="section-intro">Collapsed by default. Expand a category to see its component counts and validation requirements.</p>
+        <details class="category">
+          <summary><span class="category-title">UUIDtoSTR default failures</span><span class="category-count">{{ result.counts.uuidtostr }} found</span></summary>
+          <div class="category-body">Known UUIDtoSTR default-creation failures. At least one occurrence is required by the current validator.</div>
+        </details>
+        <details class="category">
+          <summary><span class="category-title">PowerBuilder catalog indexes</span><span class="category-count">{{ result.counts.pbcatt_x + result.counts.pbcatc_x + result.counts.pbcatf_x + result.counts.pbcatv_x + result.counts.pbcate_x }} found / 5 required</span></summary>
+          <div class="category-body">
+            <ul>
+              <li>pbcatt_x — {{ result.counts.pbcatt_x }} found / 1 required</li>
+              <li>pbcatc_x — {{ result.counts.pbcatc_x }} found / 1 required</li>
+              <li>pbcatf_x — {{ result.counts.pbcatf_x }} found / 1 required</li>
+              <li>pbcatv_x — {{ result.counts.pbcatv_x }} found / 1 required</li>
+              <li>pbcate_x — {{ result.counts.pbcate_x }} found / 1 required</li>
+            </ul>
+          </div>
+        </details>
+        <details class="category">
+          <summary><span class="category-title">ix_cnt_diffweeks syntax error</span><span class="category-count">{{ result.counts.ix_cnt_diffweeks }} found / 1 required</span></summary>
+          <div class="category-body">Known empty-column-list index syntax error. Exactly one occurrence is required.</div>
+        </details>
+        <p class="footer-note">{% if result.status == 'cannot_validate' %}Counts are partial because the log could not be fully validated.{% else %}Recognized errors are those matching known patterns. PASS also requires the expected occurrence counts.{% endif %}</p>
+      </section>
+      {% endif %}
+    {% endif %}
+  </main>
+
+  <script>
+    // Investigation notes are stored per log on the local server. Refreshing,
+    // reopening the checker, and rechecking the same log restore them.
+    const activeReportId = {{ report_id | tojson }};
+    const investigationCards = [...document.querySelectorAll('.error-card[data-error-index]')];
+    const pendingNoteSaves = new Map();
+    const noteTimers = new Map();
+    const dirtyNotes = new Set();
+
+    function setNoteStatus(card, message, isError = false) {
+      const status = card.querySelector('.note-status');
+      status.textContent = message;
+      status.classList.toggle('is-error', isError);
+    }
+
+    function saveInvestigation(card) {
+      const index = Number(card.dataset.errorIndex);
+      clearTimeout(noteTimers.get(index));
+      noteTimers.delete(index);
+      const previous = pendingNoteSaves.get(index) || Promise.resolve();
+      const operation = previous.catch(() => {}).then(async () => {
+        const note = card.querySelector('.investigation-note').value;
+        const resolved = card.querySelector('.resolved-checkbox').checked;
+        setNoteStatus(card, 'Saving…');
+        const response = await fetch('/_investigation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-SQLines-Shutdown-Token': {{ shutdown_token | tojson }}
+          },
+          body: JSON.stringify({ report_id: activeReportId, index, note, resolved })
+        });
+        if (!response.ok) throw new Error('Could not save investigation note');
+        if (card.querySelector('.investigation-note').value === note &&
+            card.querySelector('.resolved-checkbox').checked === resolved) {
+          dirtyNotes.delete(index);
+          setNoteStatus(card, 'Saved');
+        }
+      });
+      pendingNoteSaves.set(index, operation);
+      operation.then(
+        () => { if (pendingNoteSaves.get(index) === operation) pendingNoteSaves.delete(index); },
+        () => {
+          if (pendingNoteSaves.get(index) === operation) pendingNoteSaves.delete(index);
+          dirtyNotes.add(index);
+          setNoteStatus(card, 'Save failed — edit the note to retry', true);
+        }
+      );
+      return operation;
+    }
+
+    function scheduleNoteSave(card) {
+      const index = Number(card.dataset.errorIndex);
+      dirtyNotes.add(index);
+      setNoteStatus(card, 'Unsaved changes');
+      clearTimeout(noteTimers.get(index));
+      noteTimers.set(index, setTimeout(() => {
+        saveInvestigation(card).catch(() => {});
+      }, 450));
+    }
+
+    async function flushPendingNotes() {
+      const saving = [];
+      for (const card of investigationCards) {
+        if (dirtyNotes.has(Number(card.dataset.errorIndex))) {
+          saving.push(saveInvestigation(card));
+        }
+      }
+      await Promise.all([...pendingNoteSaves.values(), ...saving]);
+      if (dirtyNotes.size) throw new Error('Investigation notes could not be saved');
+    }
+
+    investigationCards.forEach(card => {
+      const note = card.querySelector('.investigation-note');
+      const checkbox = card.querySelector('.resolved-checkbox');
+      const tag = card.querySelector('.tag');
+      note.addEventListener('input', () => scheduleNoteSave(card));
+      checkbox.addEventListener('change', async () => {
+        const newState = checkbox.checked;
+        dirtyNotes.add(Number(card.dataset.errorIndex));
+        checkbox.disabled = true;
+        try {
+          await saveInvestigation(card);
+          tag.textContent = newState ? 'Resolved' : 'Review required';
+          tag.classList.toggle('resolved-tag', newState);
+          if (newState) card.open = false;
+        } catch {
+          checkbox.checked = !newState;
+          setNoteStatus(card, 'Could not save resolution status — please retry', true);
+        } finally {
+          checkbox.disabled = false;
+        }
+      });
+    });
+
+    // Both export actions get the report from the server after pending notes save.
+    const reportError = document.getElementById('report-error');
+    const copyReportButton = document.getElementById('copy-report');
+    const downloadReportButton = document.getElementById('download-report');
+    function reportFailure(error) {
+      if (reportError) {
+        reportError.textContent = 'Could not export the report. Check that notes have saved, then retry.';
+        reportError.hidden = false;
+      }
+      console.error('Report export failed:', error);
+    }
+    if (copyReportButton) {
+      copyReportButton.addEventListener('click', async () => {
+        try {
+          reportError.hidden = true;
+          // Supply the text as a promise so Safari retains user activation
+          // while the latest notes are saved and the report is generated.
+          const reportTextPromise = (async () => {
+            await flushPendingNotes();
+            const response = await fetch('/_report');
+            if (!response.ok) throw new Error('Could not generate report');
+            return await response.text();
+          })();
+          if (navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
+            await navigator.clipboard.write([
+              new ClipboardItem({
+                'text/plain': reportTextPromise.then(text =>
+                  new Blob([text], { type: 'text/plain' }))
+              })
+            ]);
+          } else {
+            await navigator.clipboard.writeText(await reportTextPromise);
+          }
+          copyReportButton.classList.add('copied');
+          copyReportButton.title = 'Report copied';
+          setTimeout(() => {
+            copyReportButton.classList.remove('copied');
+            copyReportButton.title = 'Copy validation report';
+          }, 1500);
+        } catch (error) { reportFailure(error); }
+      });
+    }
+    if (downloadReportButton) {
+      downloadReportButton.addEventListener('click', async () => {
+        try {
+          reportError.hidden = true;
+          await flushPendingNotes();
+          const response = await fetch('/_report?download=1');
+          if (!response.ok) throw new Error('Could not generate report');
+          const fileUrl = URL.createObjectURL(await response.blob());
+          const link = document.createElement('a');
+          link.href = fileUrl;
+          link.download = 'SQLines_Validation_Report.txt';
+          document.body.append(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(fileUrl), 5000);
+        } catch (error) { reportFailure(error); }
+      });
+    }
+
+    const quitButton = document.getElementById('quit-app');
+    const shutdownError = document.getElementById('shutdown-error');
+    quitButton.addEventListener('click', async () => {
+      quitButton.disabled = true;
+      shutdownError.hidden = true;
+      try {
+        await flushPendingNotes();
+        const response = await fetch('/_shutdown', {
+          method: 'POST',
+          headers: { 'X-SQLines-Shutdown-Token': {{ shutdown_token | tojson }} }
+        });
+        if (!response.ok) throw new Error('Shutdown request rejected');
+        document.title = 'SQLines Log Checker — closed';
+        document.querySelector('main.shell').innerHTML = `
+          <section class="panel" role="status">
+            <h1>SQLines Log Checker has stopped</h1>
+            <p class="subtle">The local server has shut down. You can close this browser tab.</p>
+          </section>`;
+      } catch (error) {
+        quitButton.disabled = false;
+        shutdownError.textContent = 'Could not save notes or stop the checker. Please try again.';
+        shutdownError.hidden = false;
+      }
+    });
+
+    // Copy the exact log text shown in a raw-error panel, preserving line breaks.
+    document.querySelectorAll('.copy-log').forEach(button => {
+      button.addEventListener('click', async () => {
+        const logText = button.parentElement.querySelector('pre').textContent;
+        try {
+          await navigator.clipboard.writeText(logText);
+          button.classList.add('copied');
+          button.title = 'Copied to clipboard';
+          button.setAttribute('aria-label', 'Copied to clipboard');
+          setTimeout(() => {
+            button.classList.remove('copied');
+            button.title = 'Copy SQL log error';
+            button.setAttribute('aria-label', 'Copy SQL log error');
+          }, 1500);
+        } catch (error) {
+          button.title = 'Copy failed';
+          button.setAttribute('aria-label', 'Copy failed');
+          console.error('Could not copy SQL log error:', error);
+        }
+      });
+    });
+
+    // Copy an extracted field without the display-only [SPACE]/[TAB] substitutions.
+    document.querySelectorAll('.copy-detail').forEach(button => {
+      button.addEventListener('click', async () => {
+        if (button.disabled) return;
+        const originalLabel = button.getAttribute('aria-label');
+        try {
+          await navigator.clipboard.writeText(JSON.parse(button.dataset.copyText));
+          button.classList.add('copied');
+          button.title = 'Copied to clipboard';
+          button.setAttribute('aria-label', 'Copied to clipboard');
+          clearTimeout(button.copyFeedbackTimer);
+          button.copyFeedbackTimer = setTimeout(() => {
+            button.classList.remove('copied');
+            button.title = originalLabel;
+            button.setAttribute('aria-label', originalLabel);
+          }, 1500);
+        } catch (error) {
+          button.title = 'Copy failed';
+          button.setAttribute('aria-label', 'Copy failed');
+          console.error('Could not copy investigation detail:', error);
+        }
+      });
+    });
+
+    const form = document.getElementById('log-form');
+    const fileInput = document.getElementById('log_file');
+    const textArea = document.getElementById('log_text');
+    const dropZone = document.getElementById('log-drop-zone');
+    const uploadError = document.getElementById('upload-error');
+    let submitting = false;
+    let dragDepth = 0;
+
+    function showUploadError(message) {
+      uploadError.textContent = message;
+      uploadError.hidden = !message;
+    }
+
+    function isFileDrag(event) {
+      return Array.from(event.dataTransfer?.types || []).includes('Files');
+    }
+
+    async function submitLog() {
+      if (submitting) return;
+      submitting = true;
+      try {
+        await flushPendingNotes();
+        form.submit();
+      } catch (error) {
+        submitting = false;
+        showUploadError('Could not save investigation notes. Please retry before checking another log.');
+        console.error('Could not save pending notes:', error);
+      }
+    }
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) {
+        showUploadError('');
+        textArea.value = '';
+        submitLog();
+      }
+    });
+
+    // Prevent a file dropped outside the upload area from replacing this page.
+    window.addEventListener('dragover', event => {
+      if (isFileDrag(event)) event.preventDefault();
+    });
+    window.addEventListener('drop', event => {
+      if (isFileDrag(event)) event.preventDefault();
+    });
+
+    dropZone.addEventListener('dragenter', event => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+      dragDepth += 1;
+      dropZone.classList.add('is-dragging');
+    });
+
+    dropZone.addEventListener('dragover', event => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+    });
+
+    dropZone.addEventListener('dragleave', event => {
+      if (!isFileDrag(event)) return;
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) dropZone.classList.remove('is-dragging');
+    });
+
+    dropZone.addEventListener('drop', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      dragDepth = 0;
+      dropZone.classList.remove('is-dragging');
+      if (submitting) return;
+
+      const files = event.dataTransfer?.files;
+      if (!files || files.length === 0) {
+        showUploadError('Drop a file, not text or a folder.');
+        return;
+      }
+      if (files.length !== 1) {
+        showUploadError('Please drop only one log file at a time.');
+        return;
+      }
+      const droppedEntries = Array.from(event.dataTransfer?.items || []);
+      if (droppedEntries.some(item => item.webkitGetAsEntry?.()?.isDirectory)) {
+        showUploadError('Please drop a file, not a folder.');
+        return;
+      }
+
+      try {
+        // Populate the existing input so Flask receives the normal log_file POST.
+        fileInput.files = files;
+        if (fileInput.files.length !== 1) throw new Error('File selection failed');
+      } catch {
+        showUploadError('Could not attach that file. Use Choose File instead.');
+        return;
+      }
+
+      showUploadError('');
+      textArea.value = '';
+      submitLog();
+    });
+
+    textArea.addEventListener('paste', event => {
+      event.preventDefault();
+      const pasted = event.clipboardData?.getData('text') || '';
+      if (!pasted.trim()) return;
+      fileInput.value = '';
+      textArea.value = pasted;
+      submitLog();
+    });
+  </script>
+</body>
+</html>
